@@ -111,10 +111,28 @@ std::vector<FaceBox> NMS(std::vector<FaceBox> &_faces, bool _local, float _thres
     std::vector<FaceBox> faces_nms;
     for (int i = 0; i < _faces.size(); i++)
     {
-        if (!flag[i]) faces_nms.push_back(_faces[i]);
+        if (!flag[i])
+            faces_nms.push_back(_faces[i]);
     }
     return faces_nms;
 }
+
+
+std::vector<FaceBox> TransformBoxes(cv::Mat _img, cv::Mat _imgPad, std::vector<FaceBox> &_faces)
+{
+    int row = (_imgPad.rows - _img.rows) / 2;
+    int col = (_imgPad.cols - _img.cols) / 2;
+
+    std::vector<FaceBox> newFaceBoxes;
+    for(int i = 0; i < _faces.size(); i++)
+    {
+        if (_faces[i].w > 0 && _faces[i].h > 0)
+            newFaceBoxes.push_back(FaceBox(_faces[i].x - col, _faces[i].y - row, _faces[i].w, _faces[i].w, _faces[i].angle, _faces[i].scale, _faces[i].score));
+    }
+    return newFaceBoxes;
+}
+
+
 
 std::vector<FaceBox> PCN_1(cv::Mat _img, cv::Mat _paddedImg, cv::dnn::Net _net, float _thresh)
 {
@@ -190,7 +208,6 @@ std::vector<FaceBox> PCN_1(cv::Mat _img, cv::Mat _paddedImg, cv::dnn::Net _net, 
         currentScale = float(_img.rows) / resizedImg.rows;
     }
 
-    cout << faceBoxes_1.size() << endl;
     return faceBoxes_1;
 }
 
@@ -219,15 +236,7 @@ std::vector<FaceBox> PCN_2(cv::Mat _img, cv::Mat _img180, cv::dnn::Net _net, flo
     // - Process the dataList vector
     for(int dataNr=0; dataNr<dataList.size(); dataNr++)
     {
-
-
         Mat inputBlob = blobFromImage(dataList[dataNr], 1.0, Size(), Scalar(), false, false);
-        cout << "Input Data: " << endl;
-        cout << "I: " << inputBlob.size[0] << endl;
-        cout << "C: " << inputBlob.size[1] << endl;
-        cout << "H: " << inputBlob.size[2] << endl;
-        cout << "W: " << inputBlob.size[3] << endl << endl;
-
         _net.setInput(inputBlob);
         std::vector<String> outputBlobNames = {"cls_prob", "rotate_cls_prob", "bbox_reg_2" };
         std::vector<cv::Mat> outputBlobs;
@@ -237,38 +246,22 @@ std::vector<FaceBox> PCN_2(cv::Mat _img, cv::Mat _img180, cv::dnn::Net _net, flo
         cv::Mat rotateProbsData = outputBlobs[1];
         cv::Mat regressionData = outputBlobs[2];
 
-        cout << "Scores Data: " << endl;
-        cout << "I: " << scoresData.size[0] << endl;
-        cout << "C: " << scoresData.size[1] << endl;
-        cout << "H: " << scoresData.size[2] << endl;
-        cout << "W: " << scoresData.size[3] << endl << endl;
+        Mat scoresMat(scoresData.size[1], scoresData.size[0], CV_32F, scoresData.ptr<float>(0, 0)); // - using channel 0
+        Mat regMat(regressionData.size[1], regressionData.size[0], CV_32F, regressionData.ptr<float>(0, 0));
+        Mat rotateProbsMat(rotateProbsData.size[1], rotateProbsData.size[0], CV_32F, rotateProbsData.ptr<float>(0, 0));
 
-        cout << "Regression Data: " << endl;
-        cout << "I: " << regressionData.size[0] << endl;
-        cout << "C: " << regressionData.size[1] << endl;
-        cout << "H: " << regressionData.size[2] << endl;
-        cout << "W: " << regressionData.size[3] << endl << endl;
-
-        cout << "Rotate Data: " << endl;
-        cout << "I: " << rotateProbsData.size[0] << endl;
-        cout << "C: " << rotateProbsData.size[1] << endl;
-        cout << "H: " << rotateProbsData.size[2] << endl;
-        cout << "W: " << rotateProbsData.size[3] << endl << endl << endl;
-
-
-        // scoresData.ptr<float>(0, 1)  ---->  image 0, channel 1
-        Mat scoresMat(scoresData.size[2], scoresData.size[3], CV_32F, scoresData.ptr<float>(0, 1));
-        Mat reg_1_Mat(regressionData.size[2], regressionData.size[3], CV_32F, regressionData.ptr<float>(0, 0));
-        Mat reg_2_Mat(regressionData.size[2], regressionData.size[3], CV_32F, regressionData.ptr<float>(0, 1));
-        Mat reg_3_Mat(regressionData.size[2], regressionData.size[3], CV_32F, regressionData.ptr<float>(0, 2));
-
-        if(scoresMat.at<float>(0,0) < _threshold)
+        float score = scoresMat.at<float>(1,0);
+        if(score < _threshold)
             continue;
 
-        float score = scoresMat.at<float>(0,0);
-        float sn = reg_1_Mat.at<float>(0,0);// reg->data_at(i, 0, 0, 0);
-        float xn = reg_2_Mat.at<float>(0,0);// reg->data_at(i, 1, 0, 0);
-        float yn = reg_3_Mat.at<float>(0,0);//reg->data_at(i, 2, 0, 0);
+        float sn = regMat.at<float>(0,0);// reg->data_at(i, 0, 0, 0);
+        float xn = regMat.at<float>(1,0);// reg->data_at(i, 1, 0, 0);
+        float yn = regMat.at<float>(2,0);//reg->data_at(i, 2, 0, 0);
+
+        sn = regMat.at<float>(0,0);// reg->data_at(i, 0, 0, 0);
+        xn = regMat.at<float>(0,1);// reg->data_at(i, 1, 0, 0);
+        yn = regMat.at<float>(0,2);//reg->data_at(i, 2, 0, 0);
+
         int cropX = _faces[dataNr].x;
         int cropY = _faces[dataNr].y;
         int cropW = _faces[dataNr].w;
@@ -281,14 +274,15 @@ std::vector<FaceBox> PCN_2(cv::Mat _img, cv::Mat _img180, cv::dnn::Net _net, flo
         int maxRotateIndex = 0;
         for (int j = 0; j < 3; j++)
         {
-            Mat rotateProbsMat(rotateProbsData.size[2], rotateProbsData.size[3], CV_32F, rotateProbsData.ptr<float>(0, j));
-            if (rotateProbsMat.at<float>(0,0) > maxRotateScore)
+            float rotateProb = rotateProbsMat.at<float>(j,0);
+            if (rotateProb > maxRotateScore)
             {
-                maxRotateScore = rotateProbsMat.at<float>(0,0);//rotateProb->data_at(i, j, 0, 0);
+                maxRotateScore = rotateProb;//rotateProb->data_at(i, j, 0, 0);
                 maxRotateIndex = j;
             }
         }
-        if(xyValid(x, y, dataList[dataNr]) && xyValid(x+w-1, y+w-1, dataList[dataNr])) //(Legal(x, y, img) && Legal(x + w - 1, y + w - 1, img))
+
+        if(xyValid(x, y, _img) && xyValid(x+w-1, y+w-1, _img)) //(Legal(x, y, img) && Legal(x + w - 1, y + w - 1, img))
         {
             float angle = 0;
             if (abs(_faces[dataNr].angle)  < EPS)
@@ -317,12 +311,159 @@ std::vector<FaceBox> PCN_2(cv::Mat _img, cv::Mat _img180, cv::dnn::Net _net, flo
     return faceBoxes_2;
 }
 
+
+
+std::vector<FaceBox> PCN_3(cv::Mat _img, cv::Mat _img180, cv::Mat _img90, cv::Mat _imgNeg90, cv::dnn::Net _net, float _threshold, int _dim, std::vector<FaceBox> _faces)
+{
+    if (_faces.size() == 0)
+        return _faces;
+
+    std::vector<cv::Mat> dataList;
+    int height = _img.rows;
+    int width = _img.cols;
+    for (int i = 0; i < _faces.size(); i++)
+    {
+        if (abs(_faces[i].angle) < EPS)
+            dataList.push_back(preprocessImg(_img(cv::Rect(_faces[i].x, _faces[i].y, _faces[i].w, _faces[i].h)), _dim));
+        else if (abs(_faces[i].angle - 90) < EPS)
+        {
+            dataList.push_back(preprocessImg(_img90(cv::Rect(_faces[i].y, _faces[i].x, _faces[i].h, _faces[i].w)), _dim));
+        }
+        else if (abs(_faces[i].angle + 90) < EPS)
+        {
+            int x = _faces[i].y;
+            int y = width - 1 - (_faces[i].x + _faces[i].w - 1);
+            dataList.push_back(preprocessImg(_imgNeg90(cv::Rect(x, y, _faces[i].w, _faces[i].h)), _dim));
+        }
+        else
+        {
+            int y2 = _faces[i].y + _faces[i].h - 1;
+            dataList.push_back(preprocessImg(_img180(cv::Rect(_faces[i].x, height - 1 - y2, _faces[i].w, _faces[i].h)), _dim));
+        }
+    }
+
+    std::vector<FaceBox> faceBoxes_3;
+
+    for(int dataNr=0; dataNr<dataList.size(); dataNr++)
+    {
+        Mat inputBlob = blobFromImage(dataList[dataNr], 1.0, Size(), Scalar(), false, false);
+        _net.setInput(inputBlob);
+        std::vector<String> outputBlobNames = {"cls_prob", "rotate_reg_3", "bbox_reg_3" };
+        std::vector<cv::Mat> outputBlobs;
+
+        _net.forward(outputBlobs, outputBlobNames);
+        cv::Mat scoresData = outputBlobs[0];
+        cv::Mat rotateProbsData = outputBlobs[1];
+        cv::Mat regressionData = outputBlobs[2];
+
+        Mat scoresMat(scoresData.size[1], scoresData.size[0], CV_32F, scoresData.ptr<float>(0, 0)); // - using channel 0
+        Mat regMat(regressionData.size[1], regressionData.size[0], CV_32F, regressionData.ptr<float>(0, 0));
+        Mat rotateProbsMat(rotateProbsData.size[1], rotateProbsData.size[0], CV_32F, rotateProbsData.ptr<float>(0, 0));
+
+        // - score = prob->data_at(i, 1, 0, 0)
+        float score = scoresMat.at<float>(1,0);
+        if(score < _threshold)
+            continue;
+
+        float sn = regMat.at<float>(0,0);// reg->data_at(i, 0, 0, 0);
+        float xn = regMat.at<float>(1,0);// reg->data_at(i, 1, 0, 0);
+        float yn = regMat.at<float>(2,0);//reg->data_at(i, 2, 0, 0);
+
+        int cropX = _faces[dataNr].x;
+        int cropY = _faces[dataNr].y;
+        int cropW = _faces[dataNr].w;
+        cv::Mat imgTmp = _img;
+        if (abs(_faces[dataNr].angle - 180)  < EPS)
+        {
+            cropY = height - 1 - (cropY + cropW - 1);
+            imgTmp = _img180;
+        }
+        else if (abs(_faces[dataNr].angle - 90)  < EPS)
+        {
+            std::swap(cropX, cropY);
+            imgTmp = _img90;
+        }
+        else if (abs(_faces[dataNr].angle + 90)  < EPS)
+        {
+            cropX = _faces[dataNr].y;
+            cropY = width - 1 - (_faces[dataNr].x + _faces[dataNr].w - 1);
+            imgTmp = _imgNeg90;
+        }
+
+        int w = int(sn * cropW);
+        int x = int(cropX  - 0.5 * sn * cropW + cropW * sn * xn + 0.5 * cropW);
+        int y = int(cropY  - 0.5 * sn * cropW + cropW * sn * yn + 0.5 * cropW);
+        float angleRange_ = 45;
+        float angle = angleRange_ * rotateProbsMat.at<float>(0,0);
+        if(xyValid(x, y, imgTmp) && xyValid(x + w - 1, y + w - 1, imgTmp))
+        {
+            if (abs(_faces[dataNr].angle)  < EPS)
+                faceBoxes_3.push_back(FaceBox(x, y, w, w, angle, _faces[dataNr].scale, score));
+            else if (abs(_faces[dataNr].angle - 180)  < EPS)
+            {
+                faceBoxes_3.push_back(FaceBox(x, height - 1 -  (y + w - 1), w, w, 180 - angle, _faces[dataNr].scale, score));
+            }
+            else if (abs(_faces[dataNr].angle - 90)  < EPS)
+            {
+                faceBoxes_3.push_back(FaceBox(y, x, w, w, 90 - angle, _faces[dataNr].scale, score));
+            }
+            else
+            {
+                faceBoxes_3.push_back(FaceBox(width - y - w, x, w, w, -90 + angle, _faces[dataNr].scale, score));
+            }
+        }
+    }
+
+    return faceBoxes_3;
+}
+
+
+
+cv::Point RotatePoint(int x, int y, float centerX, float centerY, float angle)
+{
+    x -= centerX;
+    y -= centerY;
+    float theta = -angle * M_PI / 180;
+    int rx = int(centerX + x * std::cos(theta) - y * std::sin(theta));
+    int ry = int(centerY + x * std::sin(theta) + y * std::cos(theta));
+    return cv::Point(rx, ry);
+}
+
+void DrawLine(cv::Mat img, std::vector<cv::Point> pointList)
+{
+    int thick = 2;
+    cv::Scalar cyan = CV_RGB(0, 255, 255);
+    cv::Scalar blue = CV_RGB(0, 0, 255);
+    cv::line(img, pointList[0], pointList[1], cyan, thick);
+    cv::line(img, pointList[1], pointList[2], cyan, thick);
+    cv::line(img, pointList[2], pointList[3], cyan, thick);
+    cv::line(img, pointList[3], pointList[0], blue, thick);
+}
+
+void DrawFace(cv::Mat img, FaceBox face)
+{
+    int x1 = face.x;
+    int y1 = face.y;
+    int x2 = face.w + face.x - 1;
+    int y2 = face.w + face.y - 1;
+    int centerX = (x1 + x2) / 2;
+    int centerY = (y1 + y2) / 2;
+    std::vector<cv::Point> pointList;
+    pointList.push_back(RotatePoint(x1, y1, centerX, centerY, face.angle));
+    pointList.push_back(RotatePoint(x1, y2, centerX, centerY, face.angle));
+    pointList.push_back(RotatePoint(x2, y2, centerX, centerY, face.angle));
+    pointList.push_back(RotatePoint(x2, y1, centerX, centerY, face.angle));
+    DrawLine(img, pointList);
+}
+
+
 // ------------------------------------------------------------------------------------------------------------
 
 int main(int argc, char **argv)
 {
     Net net_1 = readNet("pcn_model/PCN-1.prototxt", "pcn_model/PCN.caffemodel");
     Net net_2 = readNet("pcn_model/PCN-2.prototxt", "pcn_model/PCN.caffemodel");
+    Net net_3 = readNet("pcn_model/PCN-3.prototxt", "pcn_model/PCN.caffemodel");
 
 
     Mat img = imread("imgs/9.jpg");
@@ -339,6 +480,28 @@ int main(int argc, char **argv)
     faces = NMS(faces, true, 0.8);
 
     faces = PCN_2(paddedImg, img180, net_2, thresholds[1], 24, faces);
+    faces = NMS(faces, true, 0.8);
+
+    faces = PCN_3(paddedImg, img180, img90, imgNeg90, net_3, thresholds[2], 48, faces);
+    faces = NMS(faces, false, 0.3);
+
+    for(auto face : faces)
+    {
+        rectangle(paddedImg, face.getBox(), Scalar(0,255,0), 3);
+    }
+
+    imshow("IMG", paddedImg);
+    waitKey();
+
+    std::vector<FaceBox> preList = TransformBoxes(img, paddedImg, faces);
+
+    for (int i = 0; i < preList.size(); i++)
+    {
+        DrawFace(img, preList[i]);
+    }
+
+    imshow("IMG", img);
+    waitKey();
 
 
     return 1;
