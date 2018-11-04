@@ -134,13 +134,13 @@ std::vector<FaceBox> TransformBoxes(cv::Mat _img, cv::Mat _imgPad, std::vector<F
 
 
 
-std::vector<FaceBox> PCN_1(cv::Mat _img, cv::Mat _paddedImg, cv::dnn::Net _net, float _thresh)
+std::vector<FaceBox> PCN_1(cv::Mat _img, cv::Mat _paddedImg, cv::dnn::Net _net, float _thresh, int _minFaceSize)
 {
     std::vector<FaceBox> faceBoxes_1;
     int row = (_paddedImg.rows - _img.rows) / 2;
     int col = (_paddedImg.cols - _img.cols) / 2;
     int netSize = 24;
-    int minFace = 20 * 1.4; // - size 20 + 40%
+    int minFace = _minFaceSize * 1.4; // - size 20 + 40%
     float currentScale = minFace / float(netSize);
     int stride = 8;
 
@@ -204,7 +204,7 @@ std::vector<FaceBox> PCN_1(cv::Mat _img, cv::Mat _paddedImg, cv::dnn::Net _net, 
             }
         }
 
-        resizedImg = resizeImg(resizedImg, currentScale);
+        resizedImg = resizeImg(resizedImg, 1.414);
         currentScale = float(_img.rows) / resizedImg.rows;
     }
 
@@ -432,8 +432,8 @@ cv::Point RotatePoint(int x, int y, float centerX, float centerY, float angle)
 void DrawLine(cv::Mat img, std::vector<cv::Point> pointList)
 {
     int thick = 2;
-    cv::Scalar cyan = CV_RGB(0, 255, 255);
-    cv::Scalar blue = CV_RGB(0, 0, 255);
+    cv::Scalar cyan = CV_RGB(0, 0, 255);
+    cv::Scalar blue = CV_RGB(0, 255, 0);
     cv::line(img, pointList[0], pointList[1], cyan, thick);
     cv::line(img, pointList[1], pointList[2], cyan, thick);
     cv::line(img, pointList[2], pointList[3], cyan, thick);
@@ -466,7 +466,7 @@ int main(int argc, char **argv)
     Net net_3 = readNet("pcn_model/PCN-3.prototxt", "pcn_model/PCN.caffemodel");
 
 
-    Mat img = imread("imgs/9.jpg");
+    Mat img = imread(argv[1]);
     Mat paddedImg = padImg(img);
 
     cv::Mat img180, img90, imgNeg90;
@@ -476,22 +476,20 @@ int main(int argc, char **argv)
 
     float thresholds[] = {0.37, 0.43, 0.95};
 
-    std::vector<FaceBox> faces = PCN_1(img, paddedImg, net_1, thresholds[0]);
-    faces = NMS(faces, true, 0.8);
+    cv::TickMeter tm;
+    tm.reset();
+    tm.start();
 
+    int minFaceSize = 40;
+    std::vector<FaceBox> faces = PCN_1(img, paddedImg, net_1, thresholds[0], minFaceSize);
+    faces = NMS(faces, true, 0.8);
     faces = PCN_2(paddedImg, img180, net_2, thresholds[1], 24, faces);
     faces = NMS(faces, true, 0.8);
-
     faces = PCN_3(paddedImg, img180, img90, imgNeg90, net_3, thresholds[2], 48, faces);
     faces = NMS(faces, false, 0.3);
 
-    for(auto face : faces)
-    {
-        rectangle(paddedImg, face.getBox(), Scalar(0,255,0), 3);
-    }
-
-    imshow("IMG", paddedImg);
-    waitKey();
+    tm.stop();
+    std::cout << "Time Cost: "<< tm.getTimeMilli() << " ms" << std::endl;
 
     std::vector<FaceBox> preList = TransformBoxes(img, paddedImg, faces);
 
