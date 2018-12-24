@@ -91,9 +91,7 @@ std::vector<FaceBox> NMS(std::vector<FaceBox> &_faces, bool _local, float _thres
         return _faces;
 
     std::sort(_faces.begin(), _faces.end(), compareFaceByScore);
-    bool flag[_faces.size()];
-
-    memset(flag, 0, _faces.size());
+    vector<int> flag(_faces.size(), 0);
     for (int i = 0; i < _faces.size(); i++)
     {
         if (flag[i])
@@ -258,9 +256,6 @@ std::vector<FaceBox> PCN_2(cv::Mat _img, cv::Mat _img180, cv::dnn::Net _net, flo
         float xn = regMat.at<float>(1,0);// reg->data_at(i, 1, 0, 0);
         float yn = regMat.at<float>(2,0);//reg->data_at(i, 2, 0, 0);
 
-        sn = regMat.at<float>(0,0);// reg->data_at(i, 0, 0, 0);
-        xn = regMat.at<float>(0,1);// reg->data_at(i, 1, 0, 0);
-        yn = regMat.at<float>(0,2);//reg->data_at(i, 2, 0, 0);
 
         int cropX = _faces[dataNr].x;
         int cropY = _faces[dataNr].y;
