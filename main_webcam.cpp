@@ -460,43 +460,55 @@ int main(int argc, char **argv)
     Net net_2 = readNet("pcn_model/PCN-2.prototxt", "pcn_model/PCN.caffemodel");
     Net net_3 = readNet("pcn_model/PCN-3.prototxt", "pcn_model/PCN.caffemodel");
 
+	cv::VideoCapture capture(0);
 
-    Mat img = imread(argv[1]);
-    Mat paddedImg = padImg(img);
+	cv::Mat img;
 
-    cv::Mat img180, img90, imgNeg90;
-    cv::flip(paddedImg, img180, 0);
-    cv::transpose(paddedImg, img90);
-    cv::flip(img90, imgNeg90, 0);
+	while (!0)
+	{
+		//read next frame
+		if (!capture.read(img))
+		{
+			std::cout << "Failed to read video!" << std::endl;
+			return -1;
+		}
+		cv::flip(img, img, 1);//Y-axis mirror (i.e. horizontal mirror)
+		
+		cv::Mat paddedImg = padImg(img);
 
-    float thresholds[] = {0.37, 0.43, 0.95};
+		cv::Mat img180, img90, imgNeg90;
+		cv::flip(paddedImg, img180, 0);
+		cv::transpose(paddedImg, img90);
+		cv::flip(img90, imgNeg90, 0);
 
-    cv::TickMeter tm;
-    tm.reset();
-    tm.start();
+		float thresholds[] = { 0.37, 0.43, 0.95 };
 
-    int minFaceSize = 40;
-    std::vector<FaceBox> faces = PCN_1(img, paddedImg, net_1, thresholds[0], minFaceSize);
-    faces = NMS(faces, true, 0.8);
-    faces = PCN_2(paddedImg, img180, net_2, thresholds[1], 24, faces);
-    faces = NMS(faces, true, 0.8);
-    faces = PCN_3(paddedImg, img180, img90, imgNeg90, net_3, thresholds[2], 48, faces);
-    faces = NMS(faces, false, 0.3);
+		cv::TickMeter tm;
+		tm.reset();
+		tm.start();
 
-    tm.stop();
-    std::cout << "Time Cost: "<< tm.getTimeMilli() << " ms" << std::endl;
+		int minFaceSize = 40;
+		std::vector<FaceBox> faces = PCN_1(img, paddedImg, net_1, thresholds[0], minFaceSize);
+		faces = NMS(faces, true, 0.8);
+		faces = PCN_2(paddedImg, img180, net_2, thresholds[1], 24, faces);
+		faces = NMS(faces, true, 0.8);
+		faces = PCN_3(paddedImg, img180, img90, imgNeg90, net_3, thresholds[2], 48, faces);
+		faces = NMS(faces, false, 0.3);
 
-    std::vector<FaceBox> preList = TransformBoxes(img, paddedImg, faces);
+		tm.stop();
+		std::cout << "Time Cost: " << tm.getTimeMilli() << " ms" << std::endl;
 
-    for (int i = 0; i < preList.size(); i++)
-    {
-        DrawFace(img, preList[i]);
-    }
+		std::vector<FaceBox> preList = TransformBoxes(img, paddedImg, faces);
 
-    imshow("IMG", img);
-    waitKey();
+		for (int i = 0; i < preList.size(); i++)
+		{
+			DrawFace(img, preList[i]);
+		}
 
-
+		cv::imshow("IMG", img);
+		cv::waitKey(33);
+	}
+   
     return 1;
 
 }
